@@ -37,7 +37,7 @@ def main(checkpoint, output_dir, device):
     
     # get policy from workspace
     policy = workspace.model
-    if cfg.training.use_ema:
+    if hasattr(cfg.training, 'use_ema') and cfg.training.use_ema:
         policy = workspace.ema_model
     
     device = torch.device(device)
