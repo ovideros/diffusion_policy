@@ -5,7 +5,8 @@ python train.py --config-name=train_diffusion_lowdim_workspace
 """
 
 import sys
-# use line-buffering for both stdout and stderr
+# 为stdout和stderr使用行缓冲
+# 这确保了日志输出能够实时显示，对于长时间运行的训练过程很有用
 sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1)
 sys.stderr = open(sys.stderr.fileno(), mode='w', buffering=1)
 
@@ -14,7 +15,8 @@ from omegaconf import OmegaConf
 import pathlib
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 
-# allows arbitrary python code execution in configs using the ${eval:''} resolver
+# 允许在配置中使用${eval:''}解析器执行任意Python代码
+# 这提供了更灵活的配置选项
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 
 @hydra.main(
@@ -23,12 +25,15 @@ OmegaConf.register_new_resolver("eval", eval, replace=True)
         'diffusion_policy','config'))
 )
 def main(cfg: OmegaConf):
-    # resolve immediately so all the ${now:} resolvers
-    # will use the same time.
+    # 立即解析配置，以确保所有${now:}解析器使用相同的时间
+    # 这对于日志记录和实验复现很重要
     OmegaConf.resolve(cfg)
 
+    # 根据配置中指定的类名获取相应的类
     cls = hydra.utils.get_class(cfg._target_)
+    # 创建工作空间实例
     workspace: BaseWorkspace = cls(cfg)
+    # 运行工作空间（开始训练或评估）
     workspace.run()
 
 if __name__ == "__main__":
