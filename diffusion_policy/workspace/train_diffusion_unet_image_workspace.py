@@ -7,6 +7,11 @@ if __name__ == "__main__":
     sys.path.append(ROOT_DIR)
     os.chdir(ROOT_DIR)
 
+    # 初始化分布式环境
+    dist.init_process_group(backend='nccl')
+    local_rank = int(os.environ["LOCAL_RANK"])
+    torch.cuda.set_device(local_rank)
+
 import os
 import hydra
 import torch
@@ -19,6 +24,9 @@ import wandb
 import tqdm
 import numpy as np
 import shutil
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data.distributed import DistributedSampler
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 from diffusion_policy.policy.diffusion_unet_image_policy import DiffusionUnetImagePolicy
 from diffusion_policy.dataset.base_dataset import BaseImageDataset
@@ -37,6 +45,9 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
     def __init__(self, cfg: OmegaConf, output_dir=None):
         super().__init__(cfg, output_dir=output_dir)
 
+        # store local rank
+        self.local_rank = local_rank
+
         # set seed
         seed = cfg.training.seed
         torch.manual_seed(seed)
@@ -50,13 +61,12 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
         if cfg.training.use_ema:
             self.ema_model = copy.deepcopy(self.model)
 
-        # configure training state
-        self.optimizer = hydra.utils.instantiate(
-            cfg.optimizer, params=self.model.parameters())
+        # 通过 DDP 打包模型
+        device = torch.device(f"cuda:{self.local_rank}")
+        self.model = DDP(self.model.to(device), device_ids=[self.local_rank])
 
-        # configure training state
-        self.global_step = 0
-        self.epoch = 0
+        if self.ema_model is not None:
+            self.ema_model = DDP(self.ema_model.to(device), device_ids=[self.local_rank])
 
     def run(self):
         cfg = copy.deepcopy(self.cfg)
@@ -72,12 +82,16 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
         dataset: BaseImageDataset
         dataset = hydra.utils.instantiate(cfg.task.dataset)
         assert isinstance(dataset, BaseImageDataset)
-        train_dataloader = DataLoader(dataset, **cfg.dataloader)
+        train_sampler = DistributedSampler(dataset)
+        train_dataloader = DataLoader(dataset, sampler=train_sampler, **cfg.dataloader)
+        # train_dataloader = DataLoader(dataset, **cfg.dataloader)
         normalizer = dataset.get_normalizer()
 
         # configure validation dataset
         val_dataset = dataset.get_validation_dataset()
-        val_dataloader = DataLoader(val_dataset, **cfg.val_dataloader)
+        val_sampler = DistributedSampler(val_dataset, shuffle=False)
+        val_dataloader = DataLoader(val_dataset, sampler=val_sampler, **cfg.val_dataloader)
+        # val_dataloader = DataLoader(val_dataset, **cfg.val_dataloader)
 
         self.model.set_normalizer(normalizer)
         if cfg.training.use_ema:
@@ -129,10 +143,11 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
         )
 
         # device transfer
-        device = torch.device(cfg.training.device)
-        self.model.to(device)
+        device = torch.device(f"cuda:{self.local_rank}")
+        # self.model.to(device)
+        self.model = DDP(self.model, device_ids=[self.local_rank])
         if self.ema_model is not None:
-            self.ema_model.to(device)
+            self.ema_model = DDP(self.ema_model, device_ids=[self.local_rank])
         optimizer_to(self.optimizer, device)
 
         # save batch for sampling
@@ -147,6 +162,7 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
             cfg.training.val_every = 1
             cfg.training.sample_every = 1
 
+        train_sampler.set_epoch(self.epoch)
         # training loop
         log_path = os.path.join(self.output_dir, 'logs.json.txt')
         with JsonLogger(log_path) as json_logger:
@@ -177,27 +193,33 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
                             self.optimizer.zero_grad()
                             lr_scheduler.step()
                         
-                        # update ema
+                        # 更新 EMA
                         if cfg.training.use_ema:
                             ema.step(self.model)
 
-                        # logging
+                        # 收集所有进程的损失
                         raw_loss_cpu = raw_loss.item()
-                        tepoch.set_postfix(loss=raw_loss_cpu, refresh=False)
-                        train_losses.append(raw_loss_cpu)
-                        step_log = {
-                            'train_loss': raw_loss_cpu,
-                            'global_step': self.global_step,
-                            'epoch': self.epoch,
-                            'lr': lr_scheduler.get_last_lr()[0]
-                        }
+                        all_losses = [torch.tensor(0.0).to(device) for _ in range(dist.get_world_size())]
+                        dist.all_gather(all_losses, torch.tensor(raw_loss_cpu).to(device))
 
-                        is_last_batch = (batch_idx == (len(train_dataloader)-1))
-                        if not is_last_batch:
-                            # log of last step is combined with validation and rollout
-                            wandb_run.log(step_log, step=self.global_step)
-                            json_logger.log(step_log)
-                            self.global_step += 1
+                        if dist.get_rank() == 0:
+                            # 在主进程上进行日志记录
+                            mean_loss = torch.mean(torch.stack(all_losses)).item()
+                            tepoch.set_postfix(loss=mean_loss, refresh=False)
+                            train_losses.append(mean_loss)
+                            step_log = {
+                                'train_loss': mean_loss,
+                                'global_step': self.global_step,
+                                'epoch': self.epoch,
+                                'lr': lr_scheduler.get_last_lr()[0]
+                            }
+
+                            is_last_batch = (batch_idx == (len(train_dataloader)-1))
+                            if not is_last_batch:
+                                # 最后一步的日志与验证和rollout合并
+                                wandb_run.log(step_log, step=self.global_step)
+                                json_logger.log(step_log)
+                                self.global_step += 1
 
                         if (cfg.training.max_train_steps is not None) \
                             and batch_idx >= (cfg.training.max_train_steps-1):
@@ -281,12 +303,22 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
                 # ========= eval end for this epoch ==========
                 policy.train()
 
+                # 确保所有进程完成评估
+                dist.barrier()
+
                 # end of epoch
                 # log of last step is combined with validation and rollout
-                wandb_run.log(step_log, step=self.global_step)
-                json_logger.log(step_log)
-                self.global_step += 1
+                
+                if dist.get_rank() == 0:
+                    wandb_run.log(step_log, step=self.global_step)
+                    json_logger.log(step_log)
+                    self.global_step += 1
+
+                # 所有进程都需要更新epoch
                 self.epoch += 1
+
+                # 再次同步所有进程
+                dist.barrier()
 
 @hydra.main(
     version_base=None,
