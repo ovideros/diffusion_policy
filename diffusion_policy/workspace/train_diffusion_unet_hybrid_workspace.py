@@ -7,6 +7,11 @@ if __name__ == "__main__":
     sys.path.append(ROOT_DIR)
     os.chdir(ROOT_DIR)
 
+    # 初始化分布式环境
+    dist.init_process_group(backend='nccl')
+    local_rank = int(os.environ["LOCAL_RANK"])
+    torch.cuda.set_device(local_rank)
+
 import os
 import hydra
 import torch

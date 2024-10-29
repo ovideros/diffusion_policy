@@ -128,17 +128,17 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
 
         # 只在主进程上配置wandb
         wandb_run = None
-        if self.is_main_process:
-            wandb_run = wandb.init(
-                dir=str(self.output_dir),
-                config=OmegaConf.to_container(cfg, resolve=True),
-                **cfg.logging
-            )
-            wandb.config.update(
-                {
-                    "output_dir": self.output_dir,
-                }
-            )
+        # if self.is_main_process:
+        #     wandb_run = wandb.init(
+        #         dir=str(self.output_dir),
+        #         config=OmegaConf.to_container(cfg, resolve=True),
+        #         **cfg.logging
+        #     )
+        #     wandb.config.update(
+        #         {
+        #             "output_dir": self.output_dir,
+        #         }
+        #     )
         
 
         # configure checkpoint
