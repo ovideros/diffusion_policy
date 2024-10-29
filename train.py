@@ -3,21 +3,12 @@ Usage:
 Training:
 python train.py --config-name=train_diffusion_lowdim_workspace
 """
-
-import sys
-# 为stdout和stderr使用行缓冲
-# 这确保了日志输出能够实时显示，对于长时间运行的训练过程很有用
-sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1)
-sys.stderr = open(sys.stderr.fileno(), mode='w', buffering=1)
-
+import os
+import torch.distributed as dist
 import hydra
-from omegaconf import OmegaConf
 import pathlib
-from diffusion_policy.workspace.base_workspace import BaseWorkspace
-
-# 允许在配置中使用${eval:''}解析器执行任意Python代码
-# 这提供了更灵活的配置选项
-OmegaConf.register_new_resolver("eval", eval, replace=True)
+from omegaconf import OmegaConf
+import torch
 
 @hydra.main(
     version_base=None,
@@ -25,16 +16,32 @@ OmegaConf.register_new_resolver("eval", eval, replace=True)
         'diffusion_policy','config'))
 )
 def main(cfg: OmegaConf):
-    # 立即解析配置，以确保所有${now:}解析器使用相同的时间
-    # 这对于日志记录和实验复现很重要
-    OmegaConf.resolve(cfg)
+    # 初始化分布式环境
+    if 'RANK' in os.environ and 'WORLD_SIZE' in os.environ:
+        rank = int(os.environ["RANK"])
+        world_size = int(os.environ['WORLD_SIZE'])
+        local_rank = int(os.environ['LOCAL_RANK'])
+        dist.init_process_group(backend='nccl', init_method='env://')
+        torch.cuda.set_device(local_rank)
+    else:
+        rank = 0
+        world_size = 1
+        local_rank = 0
 
-    # 根据配置中指定的类名获取相应的类
+    OmegaConf.resolve(cfg)
+    
+    # 将rank和world_size添加到配置中
+    cfg.rank = rank
+    cfg.world_size = world_size
+    cfg.local_rank = local_rank
+
     cls = hydra.utils.get_class(cfg._target_)
-    # 创建工作空间实例
     workspace: BaseWorkspace = cls(cfg)
-    # 运行工作空间（开始训练或评估）
     workspace.run()
+
+    # 清理分布式环境
+    if world_size > 1:
+        dist.destroy_process_group()
 
 if __name__ == "__main__":
     main()

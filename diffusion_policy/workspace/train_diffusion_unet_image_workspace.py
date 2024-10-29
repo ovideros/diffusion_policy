@@ -46,7 +46,9 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
         super().__init__(cfg, output_dir=output_dir)
 
         # store local rank
-        self.local_rank = local_rank
+        self.local_rank = int(os.environ.get("LOCAL_RANK", 0))
+        self.global_rank = dist.get_rank()
+        self.is_main_process = (self.global_rank == 0)
 
         # set seed
         seed = cfg.training.seed
@@ -124,17 +126,20 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
             output_dir=self.output_dir)
         assert isinstance(env_runner, BaseImageRunner)
 
-        # configure logging
-        wandb_run = wandb.init(
-            dir=str(self.output_dir),
-            config=OmegaConf.to_container(cfg, resolve=True),
-            **cfg.logging
-        )
-        wandb.config.update(
-            {
-                "output_dir": self.output_dir,
-            }
-        )
+        # 只在主进程上配置wandb
+        wandb_run = None
+        if self.is_main_process:
+            wandb_run = wandb.init(
+                dir=str(self.output_dir),
+                config=OmegaConf.to_container(cfg, resolve=True),
+                **cfg.logging
+            )
+            wandb.config.update(
+                {
+                    "output_dir": self.output_dir,
+                }
+            )
+        
 
         # configure checkpoint
         topk_manager = TopKCheckpointManager(
@@ -202,24 +207,29 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
                         all_losses = [torch.tensor(0.0).to(device) for _ in range(dist.get_world_size())]
                         dist.all_gather(all_losses, torch.tensor(raw_loss_cpu).to(device))
 
-                        if dist.get_rank() == 0:
-                            # 在主进程上进行日志记录
-                            mean_loss = torch.mean(torch.stack(all_losses)).item()
-                            tepoch.set_postfix(loss=mean_loss, refresh=False)
-                            train_losses.append(mean_loss)
-                            step_log = {
-                                'train_loss': mean_loss,
-                                'global_step': self.global_step,
-                                'epoch': self.epoch,
-                                'lr': lr_scheduler.get_last_lr()[0]
-                            }
+                        
+                           
+                        mean_loss = torch.mean(torch.stack(all_losses)).item()
+                        tepoch.set_postfix(loss=mean_loss, refresh=False)
+                        train_losses.append(mean_loss)
+                        step_log = {
+                            'train_loss': mean_loss,
+                            'global_step': self.global_step,
+                            'epoch': self.epoch,
+                            'lr': lr_scheduler.get_last_lr()[0]
+                        }
 
-                            is_last_batch = (batch_idx == (len(train_dataloader)-1))
-                            if not is_last_batch:
-                                # 最后一步的日志与验证和rollout合并
-                                wandb_run.log(step_log, step=self.global_step)
-                                json_logger.log(step_log)
-                                self.global_step += 1
+                        is_last_batch = (batch_idx == (len(train_dataloader)-1))
+                        
+                        
+                        # 只在主进程上进行wandb日志记录
+                        if self.is_main_process:
+                            wandb_run.log(step_log, step=self.global_step)
+                            json_logger.log(step_log)
+                            self.global_step += 1
+
+                         # 所有进程都需要更新epoch
+                        self.epoch += 1
 
                         if (cfg.training.max_train_steps is not None) \
                             and batch_idx >= (cfg.training.max_train_steps-1):
@@ -319,6 +329,10 @@ class TrainDiffusionUnetImageWorkspace(BaseWorkspace):
 
                 # 再次同步所有进程
                 dist.barrier()
+
+        # 在训练结束时关闭wandb（仅主进程）
+        if self.is_main_process and wandb_run is not None:
+            wandb_run.finish()
 
 @hydra.main(
     version_base=None,

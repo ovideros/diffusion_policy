@@ -180,6 +180,3 @@ val_dataloader:
   persistent_workers: false
   pin_memory: true
   shuffle: false
-rank: 0
-world_size: 0
-local_rank: 0
