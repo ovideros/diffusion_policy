@@ -1,0 +1,6 @@
+# 训练配置
+num_processes: 4
+num_cpu_threads_per_process: 8
+config_name: "image_pusht_diffusion_policy_cnn.yaml"
+training_seed: 0
+gpu_device: "cuda:0" 

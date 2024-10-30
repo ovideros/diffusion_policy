@@ -5,6 +5,9 @@ python train.py --config-name=train_diffusion_lowdim_workspace
 """
 
 import sys
+import datetime
+from typing import Any
+
 # 为stdout和stderr使用行缓冲
 # 这确保了日志输出能够实时显示，对于长时间运行的训练过程很有用
 sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1)
@@ -15,8 +18,20 @@ from omegaconf import OmegaConf
 import pathlib
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
 
-# 允许在配置中使用${eval:''}解析器执行任意Python代码
-# 这提供了更灵活的配置选项
+# 添加时间相关的解析器
+def get_timestamp() -> str:
+    return datetime.datetime.now().strftime('%Y.%m.%d-%H.%M.%S')
+
+def get_date() -> str:
+    return datetime.datetime.now().strftime('%Y.%m.%d')
+
+def get_time() -> str:
+    return datetime.datetime.now().strftime('%H.%M.%S')
+
+# 注册新的解析器
+OmegaConf.register_new_resolver("timestamp", get_timestamp)
+OmegaConf.register_new_resolver("date", get_date)
+OmegaConf.register_new_resolver("time", get_time)
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 
 @hydra.main(
