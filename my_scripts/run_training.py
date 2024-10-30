@@ -24,6 +24,16 @@ def main():
     # 加载配置文件
     config = load_config(args.config)
     
+    # 生成时间戳
+    current_time = datetime.now()
+    date_str = current_time.strftime("%Y.%m.%d")
+    time_str = current_time.strftime("%H.%M.%S")
+
+    # 在构建命令之前添加
+    name = config.get('name', '')
+    task_name = config.get('task_name', '')
+
+    
     # 构建命令
     cmd = (
         f"accelerate launch "
@@ -33,7 +43,7 @@ def main():
         f"--config-name={config['config_name']} "
         f"training.seed={config['training_seed']} "
         f"training.device={config['gpu_device']} "
-        f"hydra.run.dir='data/outputs/{datetime.now():%Y.%m.%d}/{datetime.now():%H.%M.%S}${name}${task_name}'"
+        f"hydra.run.dir='data/outputs/${{now:%Y.%m.%d}}/${{now:%H.%M.%S}}{name}{task_name}'"
     )
     
     # 执行命令
