@@ -185,7 +185,7 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                             train_sampling_batch = batch
 
                         # compute loss
-                        raw_loss = self.model.module.compute_loss(batch)
+                        raw_loss = self.model.compute_loss(batch)
                         loss = raw_loss / cfg.training.gradient_accumulate_every
                         accelerator.backward(loss)
 

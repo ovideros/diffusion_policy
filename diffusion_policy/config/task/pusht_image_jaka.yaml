@@ -1,0 +1,42 @@
+name: real_image
+
+image_shape: [3, 96, 96]
+dataset_path: data/real_pusht_jaka/replay_buffer
+
+shape_meta: &shape_meta
+  # acceptable types: rgb, low_dim
+  obs:
+    # camera_0:
+    #   shape: ${task.image_shape}
+    #   type: rgb
+    image:
+      shape: ${task.image_shape}
+      type: rgb
+    # camera_2:
+    #   shape: ${task.image_shape}
+    #   type: rgb
+    # camera_3:
+    #   shape: ${task.image_shape}
+    #   type: rgb
+    # camera_4:
+    #   shape: ${task.image_shape}
+    #   type: rgb
+    agent_pos:
+      shape: [2]
+      type: low_dim
+  action: 
+    shape: [3]
+
+env_runner:
+  _target_: diffusion_policy.env_runner.real_pusht_jaka_runner.RealPushTImageRunner
+
+dataset:
+  _target_: diffusion_policy.dataset.real_pusht_jaka_image_dataset.PushTImageDataset
+  horizon: ${horizon}
+  pad_before: ${eval:'${n_obs_steps}-1+${n_latency_steps}'}
+  pad_after: ${eval:'${n_action_steps}-1'}
+  seed: 42
+  val_ratio: 0.10
+  max_train_episodes: 50
+  zarr_path: data/real_pusht_jaka/replay_buffer.zarr
+
