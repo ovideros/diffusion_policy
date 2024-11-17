@@ -43,8 +43,9 @@ def main():
         f"--config-name={config['config_name']} "
         f"training.seed={config['training_seed']} "
         f"training.device={config['gpu_device']} "
-        f"hydra.run.dir='data/outputs/${{now:%Y.%m.%d}}/${{now:%H.%M.%S}}{name}{task_name}'"
-    )
+        f"hydra.run.dir='data/outputs/${{now:%Y.%m.%d}}/${{now:%H.%M.%S}}{name}{task_name}' "
+        f"{f'task={config["task"]} ' if 'task' in config else ''}"
+    ).strip()
     
     # 执行命令
     print(f"Executing command: {cmd}")
