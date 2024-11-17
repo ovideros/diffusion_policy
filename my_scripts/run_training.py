@@ -3,7 +3,7 @@
 python ./my_scripts/run_training.py
 
 # 使用自定义配置文件
-python ./my_scripts/run_training.py --config ./my_config/your_custom_config.yamlc
+python ./my_scripts/run_training.py --config ./my_config/your_custom_config.yaml
 """
 
 import argparse

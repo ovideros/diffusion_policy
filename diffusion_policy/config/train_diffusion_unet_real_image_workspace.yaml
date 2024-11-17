@@ -1,6 +1,6 @@
 defaults:
   - _self_
-  - task: real_pusht_image
+  - task: pusht_image_jaka
 
 name: train_diffusion_unet_image
 _target_: diffusion_policy.workspace.train_diffusion_unet_image_workspace.TrainDiffusionUnetImageWorkspace
