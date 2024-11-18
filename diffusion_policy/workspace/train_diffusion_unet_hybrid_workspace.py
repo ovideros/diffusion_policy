@@ -268,6 +268,7 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                         pred_action = result['action_pred']
                         mse = torch.nn.functional.mse_loss(pred_action, gt_action)
                         step_log['train_action_mse_error'] = mse.item()
+                        step_log['test_mean_score'] = 0
                         del batch
                         del obs_dict
                         del gt_action
@@ -292,8 +293,8 @@ class TrainDiffusionUnetHybridWorkspace(BaseWorkspace):
                     # We can't copy the last checkpoint here
                     # since save_checkpoint uses threads.
                     # therefore at this point the file might have been empty!
-                    topk_ckpt_path = topk_manager.get_ckpt_path(metric_dict)
 
+                    topk_ckpt_path = topk_manager.get_ckpt_path(metric_dict)
                     if topk_ckpt_path is not None:
                         self.save_checkpoint(path=topk_ckpt_path)
                 # ========= eval end for this epoch ==========
