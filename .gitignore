@@ -3,6 +3,7 @@ logs
 wandb
 outputs
 data
+!data/real_grasp_jaka/process_videos.py
 data_local
 .vscode
 _wandb
