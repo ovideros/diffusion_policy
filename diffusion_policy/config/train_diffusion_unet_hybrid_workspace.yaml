@@ -84,7 +84,7 @@ training:
   device: "cuda:0"
   seed: 42
   debug: False
-  resume: True
+  resume: False
   # optimization
   lr_scheduler: cosine
   lr_warmup_steps: 500
@@ -106,12 +106,12 @@ training:
   tqdm_interval_sec: 1.0
 
 logging:
-  project: diffusion_policy_debug
-  resume: True
+  project: diffusion_policy_jaka
+  resume: False
   mode: online
   name: ${now:%Y.%m.%d-%H.%M.%S}_${name}_${task_name}
   tags: ["${name}", "${task_name}", "${exp_name}"]
-  id: null
+  id: "11451419"
   group: null
 
 checkpoint:
