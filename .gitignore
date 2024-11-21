@@ -2,7 +2,10 @@ bin
 logs
 wandb
 outputs
-data
+#data
+data/*
+!data/real_grasp_jaka/
+data/real_grasp_jaka/*
 !data/real_grasp_jaka/process_videos.py
 data_local
 .vscode
